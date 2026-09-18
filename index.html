@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>App del Clima</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="tarjeta">
+    <h1>¿Cómo está el clima?</h1>
+    <p class="pista">Escribe una o varias ciudades separadas por comas.</p>
+
+    <!-- Bloque de búsqueda -->
+    <form id="formulario">
+      <div class="buscar">
+        <input type="text" id="ciudad" placeholder="Bogotá, Madrid, Tokio…" autocomplete="off">
+        <button type="submit">Consultar</button>
+      </div>
+    </form>
+
+    <!-- Mensajes de estado / error -->
+    <p id="estado" class="estado"></p>
+
+    <!-- Tarjetas de resultado -->
+    <section id="resultado" class="resultado"></section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
