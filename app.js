@@ -69,8 +69,12 @@ const CODIGOS_CLIMA = {
 const API_GEO   = "https://geocoding-api.open-meteo.com/v1/search";
 const API_CLIMA = "https://api.open-meteo.com/v1/forecast";
 
+// Error especial: la ciudad NO existe (vs "sin conexión").
+class CiudadNoEncontrada extends Error {}
+
 // ============================================================
 // GEOCODIFICAR: nombre de ciudad -> lat/lon
+// Si no existe o no coincide la palabra, lanza CiudadNoEncontrada.
 // ============================================================
 async function geocodificar(ciudad) {
   // Y si ya la tengo en caché COMPLETA? no vuelvo a la red.
@@ -83,15 +87,30 @@ async function geocodificar(ciudad) {
   const url =
     API_GEO +
     "?name=" + encodeURIComponent(ciudad) +
-    "&count=1&language=es&format=json";
+    "&count=5&language=es&format=json";
 
   const res = await fetch(url);            // puede fallar si NO hay red
   if (!res.ok) throw new Error("HTTP " + res.status);
   const data = await res.json();
+
   if (!data.results || data.results.length === 0) {
-    throw new Error("No se encontró la ciudad: " + ciudad);
+    throw new CiudadNoEncontrada("No se encontró la ciudad: " + ciudad);
   }
-  const lugar = data.results[0];
+
+  // Validar que el resultado "se parezca" a lo escrito (la API a veces
+  // devuelve hasta matches difusos: "cali" -> "Calle"). Comparamos sin
+  // acentos y en minúsculas.
+  const buscado = normalizar(ciudad);
+  const coincide = data.results.filter(r => {
+    const n = normalizar(r.name);
+    return n.includes(buscado) || buscado.includes(n);
+  });
+
+  if (coincide.length === 0) {
+    throw new CiudadNoEncontrada("No se encontró la ciudad: " + ciudad);
+  }
+
+  const lugar = coincide[0];
   return {
     lat: lugar.latitude,
     lon: lugar.longitude,
@@ -121,6 +140,9 @@ async function getWeather(ciudad) {
     guardarCache(clave, datos);
     return Object.assign({ deCache: false }, datos);
   } catch (error) {
+    // Si la ciudad NO existe, avisarlo claro (no es un problema de internet).
+    if (error instanceof CiudadNoEncontrada) throw error;
+
     // 3) Falló la red -> busco lo que haya guardado, aunque sea viejo.
     const vieja = leerCache()[clave];
     if (vieja && vieja.temperatura != null) {
@@ -179,18 +201,41 @@ async function pedirClima(pos) {
 async function getWeatherVarias(ciudades) {
   const claves = ciudades.map(normalizar);
 
+  // Geocodificar TODAS pero por separado: una ciudad inexistente no
+  // debe tumbar a las demás.
+  const intentos = await Promise.all(claves.map(async clave => {
+    try {
+      return { ok: true, pos: await geocodificar(clave) };
+    } catch (error) {
+      if (error instanceof CiudadNoEncontrada) return { ok: false, clave: clave };
+      throw error; // error de red -> se maneja abajo
+    }
+  }));
+
+  const posiciones = intentos.filter(i => i.ok).map(i => i.pos);
+  const noEncontradas = intentos.filter(i => !i.ok).map(i => i.clave);
+
+  // Si NINGUNA existió -> aviso claro (no mensaje de "sin conexión").
+  if (posiciones.length === 0) {
+    throw new CiudadNoEncontrada("No se encontraron: " + noEncontradas.join(", "));
+  }
+
+  // Claves normalizadas de las ciudades SÍ encontradas.
+  const clavesOk = posiciones.map(p => normalizar(p.nombre));
+
   try {
-    // Geocodificar todas (en paralelo) -> luego UNA llamada de clima.
-    const posiciones = await Promise.all(claves.map(geocodificar));
+    // UNA llamada de clima para las que sí existen.
     const datos = await pedirClimaVarias(posiciones);
 
-    // Guardar todas en caché.
-    datos.forEach((d, i) => guardarCache(claves[i], d));
-    return datos;
+    // Guardar en caché las que vinieron por red (no de caché).
+    datos.forEach((d, i) => {
+      if (i < posiciones.length && !posiciones[i].deCache) guardarCache(clavesOk[i], d);
+    });
+    return { datos: datos, noEncontradas: noEncontradas };
   } catch (error) {
-    // Sin conexión: responder con lo guardado.
+    // Sin conexión: responder con lo guardado de las que se pudieron.
     const cache = leerCache();
-    const datos = claves
+    const datos = clavesOk
       .map(c => cache[c])
       .filter(e => e && e.temperatura != null)
       .map(e => Object.assign({ deCache: true, cacheFresca: false }, e));
@@ -198,7 +243,7 @@ async function getWeatherVarias(ciudades) {
     if (datos.length === 0) {
       throw new Error("Sin conexión y sin datos guardados.");
     }
-    return datos;
+    return { datos: datos, noEncontradas: noEncontradas };
   }
 }
 
@@ -220,25 +265,31 @@ function horaLocal(d) {
   return formateador.format(new Date());
 }
 
-function pintarClima(datos) {
+function pintarClima(resultado) {
+  const datos = resultado.datos;
+  const noEncontradas = resultado.noEncontradas;
   const destino = document.getElementById("resultado");
   const estado  = document.getElementById("estado");
 
   if (datos.length === 0) {
-    estado.textContent = "No se encontró ninguna ciudad.";
+    estado.textContent = noEncontradas.length > 0
+      ? "⚠ No se encontró ninguna ciudad: " + noEncontradas.join(", ")
+      : "No se encontró ninguna ciudad.";
     return;
   }
 
-  estado.textContent = datos.some(d => d.deCache)
-    ? "⚠ Sin conexión: mostrando datos guardados."
-    : "";
+  const avisos = [];
+  // Solo avisa "sin conexión" si los datos son VIEJOS (deCache sin caché fresca).
+  // El caché fresco (<10 min) es una respuesta normal y no debe mostrar letrero.
+  if (datos.some(d => d.deCache && !d.cacheFresca)) avisos.push("Sin conexión: mostrando datos guardados");
+  if (noEncontradas.length > 0) avisos.push("No se encontraron: " + noEncontradas.join(", "));
+  estado.textContent = avisos.length > 0 ? "⚠ " + avisos.join(" · ") : "";
 
   destino.innerHTML = datos
     .map(d => {
       const clima = CODIGOS_CLIMA[d.codigo] || { texto: "Desconocido", icono: "❓" };
-      const nota = d.deCache
-        ? (d.cacheFresca ? "<p class='origen'>caché (recién guardado)</p>"
-                         : "<p class='origen'>caché (sin conexión)</p>")
+      const nota = d.deCache && !d.cacheFresca
+        ? "<p class='origen'>caché (sin conexión)</p>"
         : "";
       return (
         "<article class='card'>" +
@@ -279,11 +330,20 @@ document.getElementById("formulario").addEventListener("submit", async (event) =
   document.getElementById("resultado").innerHTML = "";
 
   try {
-    const datos = ciudades.length === 1
-      ? [await getWeather(ciudades[0])]      // una ciudad
-      : await getWeatherVarias(ciudades);    // varias a la vez
-    pintarClima(datos);
+    let resultado;
+    if (ciudades.length === 1) {
+      // Una ciudad: getWeather lanza o devuelve el dato único.
+      const datos = [await getWeather(ciudades[0])];
+      resultado = { datos: datos, noEncontradas: [] };
+    } else {
+      resultado = await getWeatherVarias(ciudades);
+    }
+    pintarClima(resultado);
   } catch (error) {
-    estado.textContent = error.message;
+    if (error instanceof CiudadNoEncontrada) {
+      estado.textContent = "⚠ " + error.message;
+    } else {
+      estado.textContent = error.message;
+    }
   }
 });

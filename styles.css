@@ -6,6 +6,22 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  /* Flecha NORMAL siempre: ni cursor de escribir (I-beam) al pasar
+     el mouse, ni "modo selección de texto" al hacer clic en textos. */
+  cursor: default;
+  user-select: none;
+}
+
+/* Solo estos elementos recuperan el cursor/acción que les toca. */
+input,
+textarea {
+  cursor: text;
+  user-select: text;   /* el input sí se puede escribir/seleccionar */
+}
+
+button,
+a {
+  cursor: pointer;
 }
 
 body {
