@@ -6,6 +6,10 @@ Consulta el clima de **una o varias ciudades** a la vez y obtén temperatura, hu
 
 ---
 
+## Deploy
+
+https://marthajcaro.github.io/Clima-App-IA/
+
 ## ✨ Funciones
 
 - 🌍 **Varias ciudades en una sola petición**: escribe `Bogotá, Madrid, Tokio` separadas por comas.
@@ -41,15 +45,19 @@ app-clima/
 ## 🔑 Cómo funciona (código)
 
 ### `normalizar(texto)`
+
 Convierte "Bogotá" y "bogotá" en la misma clave (`bogota`) para que la caché no se duplique.
 
 ### `getWeather(ciudad)`
+
 Devuelve el clima de **una** ciudad, revisando primero la caché fresca (10 min). Si la red falla, responde con lo guardado (`deCache: true`).
 
 ### `getWeatherVarias(ciudades)`
+
 Geocodifica todas las ciudades en paralelo y hace **UNA sola petición** de clima (la API acepta `lat,lon` separados por coma y devuelve un array).
 
 ### `pedirClimaVarias(posiciones)`
+
 Llamada real a la API:
 
 ```
@@ -60,26 +68,28 @@ https://api.open-meteo.com/v1/forecast
 ```
 
 ### Caché (`localStorage`)
+
 - Clave: `app-clima-cache`
 - TTL: **10 minutos** (se considera "fresco").
 - Sin conexión → se devuelven los datos guardados aunque sean viejos, con la nota `caché (sin conexión)`.
 
 ### `horaLocal(d)`
+
 Usa la zona horaria que devuelve la geocodificación (`timezone`, ej. `America/Bogota`) y `Intl.DateTimeFormat` para mostrar **la hora de la ciudad**, no la de tu PC.
 
 ---
 
 ## 🌦️ Códigos de clima (WMO)
 
-| Código | Clima | Emoji |
-|--------|-------|-------|
-| 0 | Despejado | ☀️ |
-| 1–3 | Nubes | 🌤️ ⛅ ☁️ |
-| 45–48 | Niebla | 🌫️ |
-| 51–55 | Llovizna | 🌦️ 🌧️ |
-| 61–65 | Lluvia | 🌧️ |
-| 80–82 | Chubascos | 🌦️ 🌧️ ⛈️ |
-| 95–96 | Tormenta | ⛈️ |
+| Código | Clima     | Emoji    |
+| ------ | --------- | -------- |
+| 0      | Despejado | ☀️       |
+| 1–3    | Nubes     | 🌤️ ⛅ ☁️ |
+| 45–48  | Niebla    | 🌫️       |
+| 51–55  | Llovizna  | 🌦️ 🌧️    |
+| 61–65  | Lluvia    | 🌧️       |
+| 80–82  | Chubascos | 🌦️ 🌧️ ⛈️ |
+| 95–96  | Tormenta  | ⛈️       |
 
 ---
 
